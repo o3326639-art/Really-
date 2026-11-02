@@ -1,0 +1,168 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- สร้างหน้าต่างหลัก (Window)
+local Window = Rayfield:CreateWindow({
+   Name = "Slap Script Hub (Menu Mode)",
+   LoadingTitle = "กำลังโหลดระบบ...",
+   LoadingSubtitle = "โดย ผู้ใช้",
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = "MySlapScriptHub",
+      FileName = "Config"
+   }
+})
+
+-- สร้างหมวดหมู่ (Tab)
+local Tab = Window:CreateTab("ฟังก์ชันหลัก", 4483362458)
+
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local events = ReplicatedStorage:FindFirstChild("events")
+local sendSlapEvent = events and events:FindFirstChild("SendSlap")
+
+
+-- ==========================================
+-- 1. ฟังก์ชัน "ออโต้ตบครั้งเดียว" (Auto-Hit Single Shot)
+-- ==========================================
+local isAutoHitActive = false
+local hasSlappedTarget = false -- ตัวแปรเช็คว่าตบเป้าหมายนี้ไปแล้วหรือยัง
+
+Tab:CreateToggle({
+   Name = "💥 ออโต้ตบ (ตบครั้งเดียวเมื่ออยู่ในจังหวะ)",
+   CurrentValue = false,
+   Flag = "AutoHitToggle",
+   Callback = function(Value)
+      isAutoHitActive = Value
+      hasSlappedTarget = false
+      if isAutoHitActive then
+          Rayfield:Notify({ Title = "ออโต้ตบ", Content = "✅ เปิดระบบออโต้ตบ (ตบครั้งเดียว) แล้ว!", Duration = 1.5 })
+      else
+          Rayfield:Notify({ Title = "ออโต้ตบ", Content = "❌ ปิดระบบออโต้ตบแล้ว", Duration = 1.5 })
+      end
+   end,
+})
+
+-- ลูปเช็คจังหวะพร้อมตบแบบตบทีเดียวจบ
+RunService.RenderStepped:Connect(function()
+    if not isAutoHitActive or not sendSlapEvent then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    local rootPart = char:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    local targetFound = false
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if enemyRoot then
+                local distance = (rootPart.Position - enemyRoot.Position).Magnitude
+                
+                -- อยู่ในระยะประชิด และหันหน้ามองไปทางเป้าหมาย
+                if distance < 6 then
+                    local lookVector = rootPart.CFrame.LookVector
+                    local directionToEnemy = (enemyRoot.Position - rootPart.Position).Unit
+                    local dotProduct = lookVector:Dot(directionToEnemy)
+                    
+                    if dotProduct > 0.3 then
+                        targetFound = true
+                        -- ถ้ายังไม่เคยตเป้าหมายนี้ในจังหวะนี้ ให้ตบแค่ครั้งเดียว
+                        if not hasSlappedTarget then
+                            pcall(function()
+                                sendSlapEvent:FireServer(999999)
+                            end)
+                            hasSlappedTarget = true -- ล็อกไว้ไม่ให้ตบรัว
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- ถ้าเราหันหนี หรือเดินถอยออกมาจากเป้าหมายแล้ว ให้รีเซ็ตสถานะเพื่อให้พร้อมตบครั้งต่อไป
+    if not targetFound then
+        hasSlappedTarget = false
+    end
+end)
+
+
+-- ==========================================
+-- 2. ฟังก์ชัน "ระบบสแกนคนตบ" (เปิด/ปิดในเมนู)
+-- ==========================================
+local isScannerActive = false
+
+Tab:CreateToggle({
+   Name = "👀 ระบบสแกนคนตบ (แจ้งเตือนในจอ)",
+   CurrentValue = false,
+   Flag = "ScannerToggle",
+   Callback = function(Value)
+      isScannerActive = Value
+      if isScannerActive then
+          Rayfield:Notify({ Title = "สแกนคนตบ", Content = "✅ เปิดระบบสแกนแล้ว!", Duration = 1.5 })
+      else
+          Rayfield:Notify({ Title = "สแกนคนตบ", Content = "❌ ปิดระบบสแกนแล้ว", Duration = 1.5 })
+      end
+   end,
+})
+
+-- ระบบตรวจจับเลือดลด
+local function setupCharacter(char)
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    local rootPart = char:WaitForChild("HumanoidRootPart", 5)
+    if not humanoid or not rootPart then return end
+    
+    local lastHealth = humanoid.Health
+    
+    humanoid.HealthChanged:Connect(function(newHealth)
+        if isScannerActive and newHealth < lastHealth then
+            local nearestPlayer = nil
+            local shortestDistance = 10 -- รัศมีตรวจจับ 10 เมตร
+            
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    if enemyRoot then
+                        local distance = (rootPart.Position - enemyRoot.Position).Magnitude
+                        if distance < shortestDistance then
+                            shortestDistance = distance
+                            nearestPlayer = player
+                        end
+                    end
+                end
+            end
+            
+            if nearestPlayer then
+                Rayfield:Notify({
+                   Title = "⚠️ แจ้งเตือนคนตบ!",
+                   Content = "โดน " .. nearestPlayer.Name .. " ตบ! (ระยะ " .. math.floor(shortestDistance) .. "ม.)",
+                   Duration = 3,
+                })
+            else
+                Rayfield:Notify({
+                   Title = "⚠️ เลือดลด!",
+                   Content = "เลือดลดแต่ไม่พบคนใกล้ตัว",
+                   Duration = 3,
+                })
+            end
+        end
+        lastHealth = newHealth
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(setupCharacter)
+if LocalPlayer.Character then
+    setupCharacter(LocalPlayer.Character)
+end
+
+Rayfield:LoadConfiguration()
+Rayfield:Notify({
+   Title = "โหลดสำเร็จ!",
+   Content = "✅ อัปเดตระบบออโต้ตบ (ครั้งเดียว) เรียบร้อย",
+   Duration = 3,
+})
